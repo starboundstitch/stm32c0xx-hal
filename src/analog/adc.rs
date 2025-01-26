@@ -132,10 +132,11 @@ impl Adc {
     /// Sets ADC source
     pub fn set_clock_source(&mut self, clock_source: ClockSource) {
         match clock_source {
-            ClockSource::Pclk(div) => self
-                .rb
-                .cfgr2()
-                .modify(|_, w| unsafe { w.ckmode().bits(div as u8) }),
+            ClockSource::Pclk(div) => {
+                self.rb
+                    .cfgr2()
+                    .modify(|_, w| unsafe { w.ckmode().bits(div as u8) });
+            }
             ClockSource::Async(div) => {
                 self.rb.cfgr2().modify(|_, w| unsafe { w.ckmode().bits(0) });
                 self.rb
@@ -263,14 +264,14 @@ impl Adc {
     }
 
     fn power_up(&mut self) {
-        self.rb.isr().modify(|_, w| w.adrdy().set_bit());
+        self.rb.isr().modify(|_, w| w.adrdy().clear());
         self.rb.cr().modify(|_, w| w.aden().set_bit());
         while self.rb.isr().read().adrdy().bit_is_clear() {}
     }
 
     fn power_down(&mut self) {
         self.rb.cr().modify(|_, w| w.addis().set_bit());
-        self.rb.isr().modify(|_, w| w.adrdy().set_bit());
+        self.rb.isr().modify(|_, w| w.adrdy().clear());
         while self.rb.cr().read().aden().bit_is_set() {}
     }
 }
@@ -374,7 +375,7 @@ where
             .chselr0()
             .modify(|_, w| unsafe { w.bits(1 << PIN::channel()) });
 
-        self.rb.isr().modify(|_, w| w.eos().set_bit());
+        self.rb.isr().modify(|_, w| w.eos().clear());
         self.rb.cr().modify(|_, w| w.adstart().set_bit());
         while self.rb.isr().read().eos().bit_is_clear() {}
 

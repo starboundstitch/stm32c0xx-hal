@@ -3,7 +3,7 @@ use crate::gpio::*;
 use crate::i2c::config::Config;
 use crate::i2c::{self, Error, I2c, I2cDirection, I2cExt, SCLPin, SDAPin};
 use crate::rcc::*;
-use crate::stm32::I2C;
+use crate::stm32::I2C1;
 use hal::blocking::i2c::{Read, Write, WriteRead};
 
 pub trait I2cSlave {
@@ -214,21 +214,21 @@ macro_rules! i2c {
 
             pub fn listen(&mut self, ev: i2c::Event) {
                 match ev {
-                    i2c::Event::AddressMatch => self.i2c.cr1().modify(|_, w| w.addrie().set_bit()),
-                    i2c::Event::Rxne => self.i2c.cr1().modify(|_, w| w.rxie().set_bit()),
+                    i2c::Event::AddressMatch => { self.i2c.cr1().modify(|_, w| w.addrie().set_bit()); }
+                    i2c::Event::Rxne =>{ self.i2c.cr1().modify(|_, w| w.rxie().set_bit());}
                 }
             }
 
             pub fn unlisten(&mut self, ev: i2c::Event) {
                 match ev {
-                    i2c::Event::AddressMatch => self.i2c.cr1().modify(|_, w| w.addrie().clear_bit()),
-                    i2c::Event::Rxne => self.i2c.cr1().modify(|_, w| w.rxie().clear_bit()),
+                    i2c::Event::AddressMatch => {self.i2c.cr1().modify(|_, w| w.addrie().clear_bit());}
+                    i2c::Event::Rxne =>{ self.i2c.cr1().modify(|_, w| w.rxie().clear_bit());}
                 }
             }
 
             pub fn clear_irq(&mut self, ev: i2c::Event) {
                 match ev {
-                    i2c::Event::AddressMatch => self.i2c.icr().write(|w| w.addrcf().set_bit()),
+                    i2c::Event::AddressMatch => {self.i2c.icr().write(|w| w.addrcf().set_bit());}
                     _ => {},
                 }
             }
@@ -506,7 +506,7 @@ macro_rules! i2c {
 }
 
 i2c!(
-    I2C,
+    I2C1,
     i2c1,
     sda: [
         (PA10<Output<OpenDrain>>, AltFunction::AF6),
