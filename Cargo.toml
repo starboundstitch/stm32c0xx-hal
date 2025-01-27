@@ -24,7 +24,7 @@ nb = "1.0.0"
 void = { version = "1.0.2", default-features = false }
 
 [dependencies.stm32c0]
-git = "https://github.com/stm32-rs/stm32-rs-nightlies"
+git = "https://github.com/aswild/stm32c0-pac"
 features = ["rt"]
 
 [dev-dependencies]

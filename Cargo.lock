@@ -359,7 +359,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 [[package]]
 name = "stm32c0"
 version = "0.15.1"
-source = "git+https://github.com/stm32-rs/stm32-rs-nightlies#200dc2ef5ecab1d23985563bf4b53edd8d09da28"
+source = "git+https://github.com/aswild/stm32c0-pac#d006c2a0ff419f4686dccb43ecd98776394e9ae8"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
