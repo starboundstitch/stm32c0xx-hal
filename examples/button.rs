@@ -18,7 +18,7 @@ fn main() -> ! {
     let port_a = dp.GPIOA.split(&mut rcc);
     let port_c = dp.GPIOC.split(&mut rcc);
 
-    let button = port_c.pc13.into_pull_up_input();
+    let mut button = port_c.pc13.into_pull_up_input();
     let mut led = port_a.pa5.into_push_pull_output();
 
     loop {

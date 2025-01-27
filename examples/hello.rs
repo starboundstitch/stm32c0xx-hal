@@ -11,7 +11,7 @@ use cortex_m_semihosting::hprintln;
 
 #[entry]
 fn main() -> ! {
-    hprintln!("Hello, STM32C0!").unwrap();
+    hprintln!("Hello, STM32C0!");
 
     loop {
         cortex_m::asm::nop();

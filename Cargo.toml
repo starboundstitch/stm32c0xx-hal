@@ -16,31 +16,23 @@ features = ["stm32c031", "rt"]
 default-target = "thumbv6m-none-eabi"
 
 [dependencies]
-cortex-m = { version = "0.7.7", features=["critical-section-single-core"] }
-nb = "1.0.0"
+bare-metal = "1.0.0"
+cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
+embedded-hal = "1.0.0"
 fugit = "0.3.5"
+nb = "1.0.0"
+void = { version = "1.0.2", default-features = false }
 
 [dependencies.stm32c0]
 git = "https://github.com/stm32-rs/stm32-rs-nightlies"
 features = ["rt"]
 
-[dependencies.bare-metal]
-version = "1.0.0"
-
-[dependencies.embedded-hal]
-features = ["unproven"]
-version = "0.2.6"
-
-[dependencies.void]
-default-features = false
-version = "1.0.2"
-
 [dev-dependencies]
 cortex-m-rt = "0.7.1"
 cortex-m-rtic = "1.0.0"
-cortex-m-semihosting = "0.3.7"
-panic-halt = "0.2.0"
-panic-semihosting = "0.5.6"
+cortex-m-semihosting = "0.5.0"
+panic-halt = "1.0.0"
+panic-semihosting = "0.6.0"
 
 [features]
 default = ["i2c-blocking"]

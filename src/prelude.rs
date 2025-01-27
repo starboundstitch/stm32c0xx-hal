@@ -20,11 +20,6 @@ pub use crate::timer::TimerExt as _;
 pub use crate::watchdog::IWDGExt as _;
 pub use crate::watchdog::WWDGExt as _;
 pub use fugit::{ExtU32 as _, RateExtU32 as _};
-pub use hal::adc::OneShot as _;
-pub use hal::digital::v2::*;
-pub use hal::prelude::*;
-pub use hal::watchdog::Watchdog as _;
-pub use hal::watchdog::WatchdogEnable as _;
 
 #[cfg(feature = "i2c-nonblocking")]
 pub use crate::i2c::nonblocking::I2cSlave;

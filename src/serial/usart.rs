@@ -1,13 +1,11 @@
-use core::fmt;
-use core::marker::PhantomData;
-
 use crate::gpio::{AltFunction, *};
-use crate::prelude::*;
 use crate::rcc::*;
 use crate::serial;
 use crate::serial::config::*;
 use crate::stm32::*;
 
+use core::fmt;
+use core::marker::PhantomData;
 use nb::block;
 
 /// Serial error
@@ -179,26 +177,6 @@ pub trait SerialExt<USART> {
     ) -> Result<Serial<USART>, InvalidConfig>;
 }
 
-impl<USART> fmt::Write for Serial<USART>
-where
-    Serial<USART>: hal::serial::Write<u8>,
-{
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        let _ = s.as_bytes().iter().map(|c| block!(self.write(*c))).last();
-        Ok(())
-    }
-}
-
-impl<USART> fmt::Write for Tx<USART>
-where
-    Tx<USART>: hal::serial::Write<u8>,
-{
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        let _ = s.as_bytes().iter().map(|c| block!(self.write(*c))).last();
-        Ok(())
-    }
-}
-
 macro_rules! uart_shared {
     ($USARTX:ident, $dmamux_rx:ident, $dmamux_tx:ident,
         tx: [ $(($PTX:ident, $TAF:expr),)+ ],
@@ -258,12 +236,8 @@ macro_rules! uart_shared {
                 let usart = unsafe { &(*$USARTX::ptr()) };
                 usart.isr_disabled().read().rxne().bit_is_set()
             }
-        }
 
-        impl hal::serial::Read<u8> for Rx<$USARTX> {
-            type Error = Error;
-
-            fn read(&mut self) -> nb::Result<u8, Error> {
+            pub fn read(&mut self) -> nb::Result<u8, Error> {
                 let usart = unsafe { &(*$USARTX::ptr()) };
                 let isr = usart.isr_enabled().read();
 
@@ -289,10 +263,8 @@ macro_rules! uart_shared {
             }
         }
 
-        impl hal::serial::Read<u8> for Serial<$USARTX> {
-            type Error = Error;
-
-            fn read(&mut self) -> nb::Result<u8, Error> {
+        impl Serial<$USARTX> {
+            pub fn read(&mut self) -> nb::Result<u8, Error> {
                 self.rx.read()
             }
         }
@@ -315,12 +287,8 @@ macro_rules! uart_shared {
                 let usart = unsafe { &(*$USARTX::ptr()) };
                 usart.isr_disabled().read().txe().bit_is_set()
             }
-        }
 
-        impl hal::serial::Write<u8> for Tx<$USARTX> {
-            type Error = Error;
-
-            fn flush(&mut self) -> nb::Result<(), Self::Error> {
+            pub fn flush(&mut self) -> nb::Result<(), Error> {
                 let usart = unsafe { &(*$USARTX::ptr()) };
                 if usart.isr_disabled().read().tc().bit_is_set() {
                     Ok(())
@@ -329,7 +297,7 @@ macro_rules! uart_shared {
                 }
             }
 
-            fn write(&mut self, byte: u8) -> nb::Result<(), Self::Error> {
+            pub fn write(&mut self, byte: u8) -> nb::Result<(), nb::Error<Error>> {
                 let usart = unsafe { &(*$USARTX::ptr()) };
                 if usart.isr_disabled().read().txe().bit_is_set() {
                     usart.tdr().write(|w| unsafe { w.bits(byte as u32) });
@@ -340,20 +308,14 @@ macro_rules! uart_shared {
             }
         }
 
-        impl hal::serial::Write<u8> for Serial<$USARTX> {
-            type Error = Error;
-
-            fn flush(&mut self) -> nb::Result<(), Self::Error> {
+        impl Serial<$USARTX> {
+            pub fn flush(&mut self) -> nb::Result<(), Error> {
                 self.tx.flush()
             }
 
-            fn write(&mut self, byte: u8) -> nb::Result<(), Self::Error> {
+            pub fn write(&mut self, byte: u8) -> nb::Result<(), nb::Error<Error>> {
                 self.tx.write(byte)
             }
-        }
-
-        impl Serial<$USARTX> {
-
             /// Separates the serial struct into separate channel objects for sending (Tx) and
             /// receiving (Rx)
             pub fn split(self) -> (Tx<$USARTX>, Rx<$USARTX>) {
@@ -541,6 +503,20 @@ macro_rules! uart {
             pub fn fifo_threshold_reached(&self) -> bool {
                 let usart = unsafe { &(*$USARTX::ptr()) };
                 usart.isr_enabled().read().rxft().bit_is_set()
+            }
+        }
+
+        impl fmt::Write for Tx<$USARTX> {
+            fn write_str(&mut self, s: &str) -> fmt::Result {
+                let _ = s.as_bytes().iter().map(|c| block!(self.write(*c))).last();
+                Ok(())
+            }
+        }
+
+        impl fmt::Write for Serial<$USARTX> {
+            fn write_str(&mut self, s: &str) -> fmt::Result {
+                let _ = s.as_bytes().iter().map(|c| block!(self.write(*c))).last();
+                Ok(())
             }
         }
     };

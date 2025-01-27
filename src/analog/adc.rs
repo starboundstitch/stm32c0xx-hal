@@ -1,10 +1,16 @@
 //! # Analog to Digital converter
+use core::convert::Infallible;
 use core::ptr;
 
 use crate::gpio::*;
 use crate::rcc::{Enable, Rcc};
 use crate::stm32::ADC;
-use hal::adc::{Channel, OneShot};
+
+pub trait Channel<ADC> {
+    type ID;
+
+    fn channel() -> Self::ID;
+}
 
 /// ADC Result Alignment
 #[derive(Eq, PartialEq)]
@@ -106,7 +112,7 @@ pub struct Adc {
     sample_time: SampleTime,
     align: Align,
     precision: Precision,
-    vref: Option<u32>,
+    vref_cache: Option<u16>,
 }
 
 /// Contains the calibration factors for the ADC which can be reused with [`Adc::set_calibration()`]
@@ -125,7 +131,7 @@ impl Adc {
             sample_time: SampleTime::T_2,
             align: Align::Right,
             precision: Precision::B_12,
-            vref: None,
+            vref_cache: None,
         }
     }
 
@@ -229,34 +235,111 @@ impl Adc {
         self.rb.ier().modify(|_, w| w.eocie().clear_bit()); // end of sequence interupt disable
     }
 
+    /// Read actual VREF voltage using the internal reference
+    ///
+    /// If oversampling is enabled, the return value is scaled down accordingly.
+    /// The product of the return value and any ADC reading always gives correct voltage in 4096ths of mV
+    /// regardless of oversampling and shift settings provided that these settings remain the same.
+    pub fn read_vref(&mut self) -> nb::Result<u16, Infallible> {
+        let mut vref = VRef::new();
+        let vref_val = if vref.enabled(self) {
+            self.read(&mut vref)?
+        } else {
+            vref.enable(self);
+            let vref_val = self.read(&mut vref)?;
+            vref.disable(self);
+            vref_val
+        };
+
+        let vref_cal: u32 = unsafe {
+            // DS12766 3.14.2
+            ptr::read_volatile(0x1FFF_756A as *const u16) as u32
+        };
+
+        // RM0454 14.9 Calculating the actual VDDA voltage using the internal reference voltage
+        // V_DDA = 3 V x VREFINT_CAL / VREFINT_DATA
+        let vref = (vref_cal * 3_000_u32 / vref_val as u32) as u16;
+        self.vref_cache = Some(vref);
+        Ok(vref)
+    }
+
+    /// Get VREF value using cached value if possible
+    ///
+    /// See `read_vref` for more details.
+    pub fn get_vref_cached(&mut self) -> nb::Result<u16, Infallible> {
+        if let Some(vref) = self.vref_cache {
+            Ok(vref)
+        } else {
+            self.read_vref()
+        }
+    }
+
     pub fn read_voltage<PIN: Channel<Adc, ID = u8>>(
         &mut self,
         pin: &mut PIN,
-    ) -> nb::Result<u16, ()> {
-        let vref = if let Some(vref) = &self.vref {
-            *vref
-        } else {
-            let vref_cal: u32 = unsafe { ptr::read_volatile(0x1FFF_756A as *const u16) as u32 };
+    ) -> nb::Result<u16, Infallible> {
+        let vref = self.get_vref_cached()?;
 
-            let mut vref = VRef::new();
-            let vref_val: u32 = if vref.enabled(self) {
-                self.read(&mut vref)?
-            } else {
-                vref.enable(self);
-                let vref_val = self.read(&mut vref)?;
-                vref.disable(self);
-                vref_val
-            };
-
-            let vref = (3_000_u32 * vref_cal) / vref_val;
-            self.vref = Some(vref);
-            vref
-        };
-
-        self.read(pin).map(|raw: u32| {
-            let adc_mv = (vref as u32 * raw) >> 12;
+        self.read(pin).map(|raw| {
+            let adc_mv = (vref as u32 * raw as u32) >> 12;
             adc_mv as u16
         })
+    }
+
+    fn read<PIN: Channel<Adc, ID = u8>>(&mut self, _pin: &mut PIN) -> nb::Result<u16, Infallible> {
+        self.power_up();
+        self.rb.cfgr1().modify(|_, w| unsafe {
+            w.res()
+                .bits(self.precision as u8)
+                .align()
+                .bit(self.align == Align::Left)
+        });
+
+        self.rb
+            .smpr()
+            .modify(|_, w| unsafe { w.smp1().bits(self.sample_time as u8) });
+
+        self.rb
+            .chselr0()
+            .modify(|_, w| unsafe { w.bits(1 << PIN::channel()) });
+
+        self.rb.isr().modify(|_, w| w.eos().clear());
+        self.rb.cr().modify(|_, w| w.adstart().set_bit());
+        while self.rb.isr().read().eos().bit_is_clear() {}
+
+        let res = self.rb.dr().read().bits() as u16;
+        let val = if self.align == Align::Left && self.precision == Precision::B_6 {
+            res << 8
+        } else {
+            res
+        };
+
+        self.power_down();
+        Ok(val)
+    }
+
+    pub fn read_temperature(&mut self) -> nb::Result<i16, Infallible> {
+        let mut vtemp = VTemp::new();
+        let vtemp_voltage: u16 = if vtemp.enabled(self) {
+            self.read_voltage(&mut vtemp)?
+        } else {
+            vtemp.enable(self);
+            let vtemp_voltage = self.read_voltage(&mut vtemp)?;
+            vtemp.disable(self);
+            vtemp_voltage
+        };
+
+        let ts_cal1: u32 = unsafe {
+            // DS12991 3.14.1
+            // at 3000 mV Vref+ and 30 degC
+            ptr::read_volatile(0x1FFF_7568 as *const u16) as u32
+        };
+
+        let v30 = (3000_u32 * ts_cal1) >> 12; // mV
+                                              // 2.5 mV/degC
+        let t = 30 + (vtemp_voltage as i32 - v30 as i32) * 10 / 25;
+
+        Ok(t as i16)
     }
 
     pub fn release(self) -> ADC {
@@ -348,46 +431,6 @@ impl DmaMode<Adc> for Adc {
         } else {
             self.rb.cfgr1().modify(|_, w| w.dmacfg().clear_bit()); // disable circular mode
         }
-    }
-}
-
-impl<WORD, PIN> OneShot<Adc, WORD, PIN> for Adc
-where
-    WORD: From<u16>,
-    PIN: Channel<Adc, ID = u8>,
-{
-    type Error = ();
-
-    fn read(&mut self, _pin: &mut PIN) -> nb::Result<WORD, Self::Error> {
-        self.power_up();
-        self.rb.cfgr1().modify(|_, w| unsafe {
-            w.res()
-                .bits(self.precision as u8)
-                .align()
-                .bit(self.align == Align::Left)
-        });
-
-        self.rb
-            .smpr()
-            .modify(|_, w| unsafe { w.smp1().bits(self.sample_time as u8) });
-
-        self.rb
-            .chselr0()
-            .modify(|_, w| unsafe { w.bits(1 << PIN::channel()) });
-
-        self.rb.isr().modify(|_, w| w.eos().clear());
-        self.rb.cr().modify(|_, w| w.adstart().set_bit());
-        while self.rb.isr().read().eos().bit_is_clear() {}
-
-        let res = self.rb.dr().read().bits() as u16;
-        let val = if self.align == Align::Left && self.precision == Precision::B_6 {
-            res << 8
-        } else {
-            res
-        };
-
-        self.power_down();
-        Ok(val.into())
     }
 }
 

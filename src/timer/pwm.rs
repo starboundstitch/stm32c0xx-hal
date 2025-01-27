@@ -6,6 +6,7 @@ use crate::stm32::*;
 use crate::time::Hertz;
 use crate::timer::pins::TimerPin;
 use crate::timer::*;
+use embedded_hal::pwm::{ErrorKind, ErrorType, SetDutyCycle};
 
 pub enum OutputCompareMode {
     Frozen = 0,
@@ -85,15 +86,14 @@ macro_rules! pwm {
                     let ratio = self.clk / freq;
                     let psc = (ratio - 1) / 0xffff;
                     let arr = ratio / (psc + 1) - 1;
-
                     unsafe {
                         self.tim.psc().write(|w| w.psc().bits(psc as u16));
                         self.tim.arr().write(|w| w.$arr().bits(arr as u16));
                         $(
                             self.tim.arr().modify(|_, w| w.$arr_h().bits((arr >> 16) as u16));
                         )*
-                        self.tim.cr1().write(|w| w.cen().set_bit());
                     }
+                    self.tim.cr1().write(|w| w.cen().set_bit());
                 }
                 /// Starts listening
                 pub fn listen(&mut self) {
@@ -143,16 +143,14 @@ macro_rules! pwm_hal {
         ($CH:ty, $ccxe:ident, $ccmrx_output:ident, $ocxpe:ident, $ocxm:ident, $ccrx:ident, $ccrx_l:ident, $ccrx_h:ident),)+
     ) => {
         $(
-            impl hal::PwmPin for PwmPin<$TIMX, $CH> {
-                type Duty = u32;
-
-                fn disable(&mut self) {
+            impl PwmPin<$TIMX, $CH> {
+                pub fn disable(&mut self) {
                     unsafe {
                         (*$TIMX::ptr()).ccer().modify(|_, w| w.$ccxe().clear_bit());
                     }
                 }
 
-                fn enable(&mut self) {
+                pub fn enable(&mut self) {
                     unsafe {
                         let tim = &*$TIMX::ptr();
                         tim.$ccmrx_output().modify(|_, w| w.$ocxpe().set_bit().$ocxm().bits(6));
@@ -160,16 +158,31 @@ macro_rules! pwm_hal {
                     }
                 }
 
-                fn get_duty(&self) -> u32 {
+                pub fn get_duty(&self) -> u32 {
                     unsafe { (*$TIMX::ptr()).$ccrx().read().bits() }
                 }
 
-                fn get_max_duty(&self) -> u32 {
+                pub fn get_max_duty(&self) -> u32 {
                     unsafe { (*$TIMX::ptr()).arr().read().bits() }
                 }
 
-                fn set_duty(&mut self, duty: u32) {
+                pub fn set_duty(&mut self, duty: u32) {
                     unsafe { (*$TIMX::ptr()).$ccrx().write(|w| w.bits(duty)); }
+                }
+            }
+
+            impl ErrorType for PwmPin<$TIMX, $CH> {
+                type Error = ErrorKind;
+            }
+
+            impl SetDutyCycle for PwmPin<$TIMX, $CH> {
+                fn max_duty_cycle(&self) -> u16 {
+                    self.get_max_duty() as u16
+                }
+
+                fn set_duty_cycle(&mut self, duty: u16) -> Result<(), Self::Error> {
+                    self.set_duty(duty as u32);
+                    Ok(())
                 }
             }
         )+
@@ -188,16 +201,14 @@ macro_rules! pwm_advanced_hal {
     ) ,)+
     ) => {
         $(
-            impl hal::PwmPin for PwmPin<$TIMX, $CH> {
-                type Duty = u16;
-
-                fn disable(&mut self) {
+            impl PwmPin<$TIMX, $CH> {
+                pub fn disable(&mut self) {
                     unsafe {
                         (*$TIMX::ptr()).ccer().modify(|_, w| w.$ccxe().clear_bit());
                     }
                 }
 
-                fn enable(&mut self) {
+                pub fn enable(&mut self) {
                     unsafe {
                         let tim = &*$TIMX::ptr();
                         tim.$ccmrx_output().modify(|_, w| w.$ocxpe().set_bit().$ocxm().bits(6));
@@ -211,16 +222,31 @@ macro_rules! pwm_advanced_hal {
                     }
                 }
 
-                fn get_duty(&self) -> u16 {
+                pub fn get_duty(&self) -> u16 {
                     unsafe { (*$TIMX::ptr()).$ccrx().read().ccr().bits() }
                 }
 
-                fn get_max_duty(&self) -> u16 {
+                pub fn get_max_duty(&self) -> u16 {
                     unsafe { (*$TIMX::ptr()).arr().read().arr().bits() }
                 }
 
-                fn set_duty(&mut self, duty: u16) {
+                pub fn set_duty(&mut self, duty: u16) {
                     unsafe { (*$TIMX::ptr()).$ccrx().write(|w| w.ccr().bits(duty)); }
+                }
+            }
+
+            impl ErrorType for PwmPin<$TIMX, $CH> {
+                type Error = ErrorKind;
+            }
+
+            impl SetDutyCycle for PwmPin<$TIMX, $CH> {
+                fn max_duty_cycle(&self) -> u16 {
+                    self.get_max_duty() as u16
+                }
+
+                fn set_duty_cycle(&mut self, duty: u16) -> Result<(), Self::Error> {
+                    self.set_duty(duty);
+                    Ok(())
                 }
             }
 
