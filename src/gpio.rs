@@ -99,6 +99,16 @@ unsafe impl<MODE> Send for Pin<MODE> {}
 
 impl<MODE> Pin<Output<MODE>> {
     #[inline(always)]
+    pub fn is_high(&self) -> bool {
+        !self.is_low()
+    }
+
+    #[inline(always)]
+    pub fn is_low(&self) -> bool {
+        unsafe { (*self.port).is_low(self.i) }
+    }
+
+    #[inline(always)]
     pub fn is_set_high(&self) -> bool {
         !self.is_set_low()
     }
@@ -165,19 +175,7 @@ impl<MODE> OutputPin for Pin<Output<MODE>> {
     }
 }
 
-impl Pin<Output<OpenDrain>> {
-    #[inline(always)]
-    pub fn is_high(&self) -> bool {
-        !self.is_low()
-    }
-
-    #[inline(always)]
-    pub fn is_low(&self) -> bool {
-        unsafe { (*self.port).is_low(self.i) }
-    }
-}
-
-impl InputPin for Pin<Output<OpenDrain>> {
+impl<MODE> InputPin for Pin<Output<MODE>> {
     #[inline(always)]
     fn is_high(&mut self) -> Result<bool, Self::Error> {
         Ok(Self::is_high(self))
