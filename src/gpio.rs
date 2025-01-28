@@ -64,12 +64,10 @@ macro_rules! gpio_trait {
     ($gpiox:ident) => {
         impl GpioRegExt for crate::stm32::$gpiox::RegisterBlock {
             fn is_low(&self, pos: u8) -> bool {
-                // NOTE(unsafe) atomic read with no side effects
                 self.idr().read().bits() & (1 << pos) == 0
             }
 
             fn is_set_low(&self, pos: u8) -> bool {
-                // NOTE(unsafe) atomic read with no side effects
                 self.odr().read().bits() & (1 << pos) == 0
             }
 
@@ -99,6 +97,43 @@ unsafe impl<MODE> Sync for Pin<MODE> {}
 // threads
 unsafe impl<MODE> Send for Pin<MODE> {}
 
+impl<MODE> Pin<Output<MODE>> {
+    #[inline(always)]
+    pub fn is_set_high(&self) -> bool {
+        !self.is_set_low()
+    }
+
+    #[inline(always)]
+    pub fn is_set_low(&self) -> bool {
+        unsafe { (*self.port).is_set_low(self.i) }
+    }
+
+    #[inline(always)]
+    pub fn set_high(&mut self) {
+        unsafe { (*self.port).set_high(self.i) };
+    }
+
+    #[inline(always)]
+    pub fn set_low(&mut self) {
+        unsafe { (*self.port).set_low(self.i) };
+    }
+
+    #[inline(always)]
+    pub fn set_state(&mut self, state: PinState) {
+        match state {
+            PinState::High => self.set_high(),
+            PinState::Low => self.set_low(),
+        }
+    }
+
+    #[inline(always)]
+    pub fn toggle(&mut self) {
+        // unlike with other methods, we have to explicitly call the inherent method because of
+        // method resolution order with &self and &mut self
+        self.set_state(PinState::from(Self::is_set_low(self)));
+    }
+}
+
 impl<MODE> ErrorType for Pin<Output<MODE>> {
     type Error = Infallible;
 }
@@ -106,38 +141,63 @@ impl<MODE> ErrorType for Pin<Output<MODE>> {
 impl<MODE> StatefulOutputPin for Pin<Output<MODE>> {
     #[inline(always)]
     fn is_set_high(&mut self) -> Result<bool, Self::Error> {
-        self.is_set_low().map(|v| !v)
+        // delegate to inherent method
+        Ok(Self::is_set_high(self))
     }
 
     #[inline(always)]
     fn is_set_low(&mut self) -> Result<bool, Self::Error> {
-        Ok(unsafe { (*self.port).is_set_low(self.i) })
+        Ok(Self::is_set_low(self))
     }
 }
 
 impl<MODE> OutputPin for Pin<Output<MODE>> {
     #[inline(always)]
     fn set_high(&mut self) -> Result<(), Self::Error> {
-        unsafe { (*self.port).set_high(self.i) };
+        Self::set_high(self);
         Ok(())
     }
 
     #[inline(always)]
     fn set_low(&mut self) -> Result<(), Self::Error> {
-        unsafe { (*self.port).set_low(self.i) }
+        Self::set_low(self);
         Ok(())
+    }
+}
+
+impl Pin<Output<OpenDrain>> {
+    #[inline(always)]
+    pub fn is_high(&self) -> bool {
+        !self.is_low()
+    }
+
+    #[inline(always)]
+    pub fn is_low(&self) -> bool {
+        unsafe { (*self.port).is_low(self.i) }
     }
 }
 
 impl InputPin for Pin<Output<OpenDrain>> {
     #[inline(always)]
     fn is_high(&mut self) -> Result<bool, Self::Error> {
-        self.is_low().map(|v| !v)
+        Ok(Self::is_high(self))
     }
 
     #[inline(always)]
     fn is_low(&mut self) -> Result<bool, Self::Error> {
-        Ok(unsafe { (*self.port).is_low(self.i) })
+        Ok(Self::is_low(self))
+    }
+}
+
+impl<MODE> Pin<Input<MODE>> {
+    #[inline(always)]
+    pub fn is_high(&self) -> bool {
+        !self.is_low()
+    }
+
+    #[inline(always)]
+    pub fn is_low(&self) -> bool {
+        unsafe { (*self.port).is_low(self.i) }
     }
 }
 
@@ -148,12 +208,13 @@ impl<MODE> ErrorType for Pin<Input<MODE>> {
 impl<MODE> InputPin for Pin<Input<MODE>> {
     #[inline(always)]
     fn is_high(&mut self) -> Result<bool, Self::Error> {
-        self.is_low().map(|v| !v)
+        // delegate to inherent method
+        Ok(Self::is_high(&*self))
     }
 
     #[inline(always)]
     fn is_low(&mut self) -> Result<bool, Self::Error> {
-        Ok(unsafe { (*self.port).is_low(self.i) })
+        Ok(Self::is_low(self))
     }
 }
 
@@ -234,47 +295,110 @@ macro_rules! gpio {
                 _mode: PhantomData<MODE>,
             }
 
+            impl<MODE> $PXx<Output<MODE>> {
+                #[inline(always)]
+                pub fn set_high(&mut self) {
+                    // NOTE(unsafe) atomic write to a stateless register
+                    unsafe { (*$GPIOX::ptr()).bsrr().write(|w| w.bits(1 << self.i)) };
+                }
+
+                #[inline(always)]
+                pub fn set_low(&mut self) {
+                    // NOTE(unsafe) atomic write to a stateless register
+                    unsafe { (*$GPIOX::ptr()).bsrr().write(|w| w.bits(1 << (self.i + 16))) };
+                }
+
+                #[inline(always)]
+                pub fn set_state(&mut self, state: PinState) {
+                    match state {
+                        PinState::High => self.set_high(),
+                        PinState::Low => self.set_low(),
+                    }
+                }
+
+                #[inline(always)]
+                pub fn toggle(&mut self) {
+                    // unlike with other methods, we have to explicitly call the inherent method because of
+                    // method resolution order with &self and &mut self
+                    self.set_state(PinState::from(Self::is_set_low(self)));
+                }
+
+                #[inline(always)]
+                pub fn is_set_high(&self) -> bool {
+                    !self.is_set_low()
+                }
+
+                #[inline(always)]
+                pub fn is_set_low(&self) -> bool {
+                    // NOTE(unsafe) atomic read with no side effects
+                    unsafe { (*$GPIOX::ptr()).odr().read().bits() & (1 << self.i) == 0 }
+                }
+
+                #[inline(always)]
+                pub fn is_high(&self) -> bool {
+                    !self.is_low()
+                }
+
+                #[inline(always)]
+                pub fn is_low(&self) -> bool {
+                    // NOTE(unsafe) atomic read with no side effects
+                    unsafe { (*$GPIOX::ptr()).idr().read().bits() & (1 << self.i) == 0 }
+                }
+            }
+
             impl<MODE> ErrorType for $PXx<Output<MODE>> {
                 type Error = Infallible;
             }
 
             impl<MODE> OutputPin for $PXx<Output<MODE>> {
+                #[inline(always)]
                 fn set_high(&mut self) -> Result<(), Self::Error> {
-                    // NOTE(unsafe) atomic write to a stateless register
-                    unsafe { (*$GPIOX::ptr()).bsrr().write(|w| w.bits(1 << self.i)) };
+                    // delegate to inherent method
+                    Self::set_high(self);
                     Ok(())
                 }
 
+                #[inline(always)]
                 fn set_low(&mut self) -> Result<(), Self::Error> {
-                    // NOTE(unsafe) atomic write to a stateless register
-                    unsafe { (*$GPIOX::ptr()).bsrr().write(|w| w.bits(1 << (self.i + 16))) };
+                    Self::set_low(self);
                     Ok(())
                 }
             }
 
             impl<MODE> StatefulOutputPin for $PXx<Output<MODE>> {
+                #[inline(always)]
                 fn is_set_high(&mut self) -> Result<bool, Self::Error> {
-                    let is_set_high = !self.is_set_low()?;
-                    Ok(is_set_high)
+                    Ok(Self::is_set_high(self))
                 }
 
+                #[inline(always)]
                 fn is_set_low(&mut self) -> Result<bool, Self::Error> {
-                    // NOTE(unsafe) atomic read with no side effects
-                    let is_set_low = unsafe { (*$GPIOX::ptr()).odr().read().bits() & (1 << self.i) == 0 };
-                    Ok(is_set_low)
+                    Ok(Self::is_set_low(self))
                 }
             }
 
             impl<MODE> InputPin for $PXx<Output<MODE>> {
+                #[inline(always)]
                 fn is_high(&mut self) -> Result<bool, Self::Error> {
-                    let is_high = !self.is_low()?;
-                    Ok(is_high)
+                    Ok(Self::is_high(self))
                 }
 
-                fn is_low(&mut self) -> Result<bool, Self::Error>  {
+                #[inline(always)]
+                fn is_low(&mut self) -> Result<bool, Self::Error> {
+                    Ok(Self::is_low(self))
+                }
+            }
+
+            impl<MODE> $PXx<Input<MODE>> {
+                #[inline(always)]
+                pub fn is_high(&self) -> bool {
+                    !self.is_low()
+                }
+
+                #[inline(always)]
+                pub fn is_low(&self) -> bool {
                     // NOTE(unsafe) atomic read with no side effects
-                    let is_low = unsafe { (*$GPIOX::ptr()).idr().read().bits() & (1 << self.i) == 0 };
-                    Ok(is_low)
+                    unsafe { (*$GPIOX::ptr()).idr().read().bits() & (1 << self.i) == 0 }
                 }
             }
 
@@ -283,19 +407,19 @@ macro_rules! gpio {
             }
 
             impl<MODE> InputPin for $PXx<Input<MODE>> {
+                #[inline(always)]
                 fn is_high(&mut self) -> Result<bool, Self::Error> {
-                    let is_high = !self.is_low()?;
-                    Ok(is_high)
+                    Ok(Self::is_high(self))
                 }
 
+                #[inline(always)]
                 fn is_low(&mut self) -> Result<bool, Self::Error> {
-                    // NOTE(unsafe) atomic read with no side effects
-                    let is_low = unsafe { (*$GPIOX::ptr()).idr().read().bits() & (1 << self.i) == 0 };
-                    Ok(is_low)
+                    Ok(Self::is_low(self))
                 }
             }
 
             $(
+                /// Fully type-state (zero-size) GPIO pin
                 pub struct $PXi<MODE> {
                     _mode: PhantomData<MODE>,
                 }
@@ -341,6 +465,7 @@ macro_rules! gpio {
                         let offset = 2 * $i;
                         unsafe {
                             let gpio = &(*$GPIOX::ptr());
+                            // TODO: use w.pupd($i) rather than .bits
                             gpio.pupdr().modify(|r, w| {
                                 w.bits(r.bits() & !(0b11 << offset))
                             });
@@ -515,6 +640,12 @@ macro_rules! gpio {
                         }
                     }
 
+                    /// Set the pin's output.
+                    ///
+                    /// Private API implemented for pins in all type-state modes, used for setting
+                    /// the state prior to reconfiguration. Publicly, set_state is only implemented
+                    /// for `PXi<Output<Mode>>`
+                    #[inline(always)]
                     fn internal_set_state(&mut self, state: PinState) {
                         match state {
                             PinState::High => {
@@ -537,6 +668,48 @@ macro_rules! gpio {
                     pub fn downgrade(self) -> $PXx<Output<MODE>> {
                         $PXx { i: $i, _mode: self._mode }
                     }
+
+                    #[inline(always)]
+                    pub fn set_high(&mut self) {
+                        self.internal_set_state(PinState::High);
+                    }
+
+                    #[inline(always)]
+                    pub fn set_low(&mut self) {
+                        self.internal_set_state(PinState::Low);
+                    }
+
+                    #[inline(always)]
+                    pub fn set_state(&mut self, state: PinState) {
+                        self.internal_set_state(state);
+                    }
+
+                    #[inline(always)]
+                    pub fn toggle(&mut self) {
+                        // unlike with other methods, we have to explicitly call the inherent method because of
+                        // method resolution order with &self and &mut self
+                        self.set_state(PinState::from(Self::is_set_low(self)));
+                    }
+
+                    #[inline(always)]
+                    pub fn is_set_high(&self) -> bool {
+                        !self.is_set_low()
+                    }
+
+                    #[inline(always)]
+                    pub fn is_set_low(&self) -> bool {
+                        unsafe { (*$GPIOX::ptr()).odr().read().bits() & (1 << $i) == 0 }
+                    }
+
+                    #[inline(always)]
+                    pub fn is_high(&self) -> bool {
+                        !self.is_low()
+                    }
+
+                    #[inline(always)]
+                    pub fn is_low(&self) -> bool {
+                        unsafe { (*$GPIOX::ptr()).idr().read().bits() & (1 << $i) == 0 }
+                    }
                 }
 
                 impl<MODE> ErrorType for $PXi<Output<MODE>> {
@@ -544,40 +717,40 @@ macro_rules! gpio {
                 }
 
                 impl<MODE> OutputPin for $PXi<Output<MODE>> {
+                    #[inline(always)]
                     fn set_high(&mut self) -> Result<(), Self::Error> {
-                        self.internal_set_state(PinState::High);
+                        Self::set_high(self);
                         Ok(())
                     }
 
+                    #[inline(always)]
                     fn set_low(&mut self) -> Result<(), Self::Error>{
-                        self.internal_set_state(PinState::Low);
+                        Self::set_low(self);
                         Ok(())
                     }
                 }
 
                 impl<MODE> StatefulOutputPin for $PXi<Output<MODE>> {
+                    #[inline(always)]
                     fn is_set_high(&mut self) -> Result<bool, Self::Error> {
-                        let is_set_high = !self.is_set_low()?;
-                        Ok(is_set_high)
+                        Ok(Self::is_set_high(self))
                     }
 
+                    #[inline(always)]
                     fn is_set_low(&mut self) -> Result<bool, Self::Error> {
-                        // NOTE(unsafe) atomic read with no side effects
-                        let is_set_low = unsafe { (*$GPIOX::ptr()).odr().read().bits() & (1 << $i) == 0 };
-                        Ok(is_set_low)
+                        Ok(Self::is_set_low(self))
                     }
                 }
 
                 impl<MODE> InputPin for $PXi<Output<MODE>> {
+                    #[inline(always)]
                     fn is_high(&mut self) -> Result<bool, Self::Error> {
-                        let is_high = !self.is_low()?;
-                        Ok(is_high)
+                        Ok(Self::is_high(self))
                     }
 
+                    #[inline(always)]
                     fn is_low(&mut self) -> Result<bool, Self::Error>  {
-                        // NOTE(unsafe) atomic read with no side effects
-                        let is_low = unsafe { (*$GPIOX::ptr()).idr().read().bits() & (1 << $i) == 0 };
-                        Ok(is_low)
+                        Ok(Self::is_low(self))
                     }
                 }
 
@@ -589,6 +762,18 @@ macro_rules! gpio {
                     pub fn downgrade(self) -> $PXx<Input<MODE>> {
                         $PXx { i: $i, _mode: self._mode }
                     }
+
+                    #[inline(always)]
+                    pub fn is_high(&self) -> bool {
+                        !self.is_low()
+                    }
+
+                    #[inline(always)]
+                    pub fn is_low(&self) -> bool {
+                        // NOTE(unsafe) atomic read with no side effects
+                        unsafe { (*$GPIOX::ptr()).idr().read().bits() & (1 << $i) == 0 }
+                    }
+
                 }
 
                 impl<MODE> ErrorType for $PXi<Input<MODE>> {
@@ -596,15 +781,14 @@ macro_rules! gpio {
                 }
 
                 impl<MODE> InputPin for $PXi<Input<MODE>> {
+                    #[inline(always)]
                     fn is_high(&mut self) -> Result<bool, Self::Error> {
-                        let is_high = !self.is_low()?;
-                        Ok(is_high)
+                        Ok(Self::is_high(self))
                     }
 
+                    #[inline(always)]
                     fn is_low(&mut self) -> Result<bool, Self::Error> {
-                        // NOTE(unsafe) atomic read with no side effects
-                        let is_low = unsafe { (*$GPIOX::ptr()).idr().read().bits() & (1 << $i) == 0 };
-                        Ok(is_low)
+                        Ok(Self::is_low(self))
                     }
                 }
             )+
