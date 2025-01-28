@@ -16,14 +16,14 @@ fn main() -> ! {
     let mut rcc = dp.RCC.constrain();
     let port_a = dp.GPIOA.split(&mut rcc);
 
-    let mut button = port_a.pa4.into_floating_input();
+    let button = port_a.pa4.into_floating_input();
     let mut led = port_a.pa5.into_push_pull_output();
 
     loop {
-        if button.is_low().unwrap_or_default() {
-            led.set_low().ok();
+        if button.is_low() {
+            led.set_low();
         } else {
-            led.set_high().ok();
+            led.set_high();
         }
     }
 }
