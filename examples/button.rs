@@ -14,15 +14,13 @@ use hal::stm32;
 fn main() -> ! {
     let dp = stm32::Peripherals::take().expect("cannot take peripherals");
     let mut rcc = dp.RCC.constrain();
-
     let port_a = dp.GPIOA.split(&mut rcc);
-    let port_c = dp.GPIOC.split(&mut rcc);
 
-    let mut button = port_c.pc13.into_pull_up_input();
+    let mut button = port_a.pa4.into_floating_input();
     let mut led = port_a.pa5.into_push_pull_output();
 
     loop {
-        if button.is_high().unwrap_or_default() {
+        if button.is_low().unwrap_or_default() {
             led.set_low().ok();
         } else {
             led.set_high().ok();
