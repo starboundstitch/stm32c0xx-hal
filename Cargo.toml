@@ -44,11 +44,8 @@ stm32c031 = ["stm32c0/stm32c031", "device-selected"]
 i2c-blocking = []
 i2c-nonblocking = []
 
-[profile.dev]
-incremental = false
-
 [profile.release]
-debug = false
+debug = true
 codegen-units = 1
 incremental = false
-lto = false
+lto = true
