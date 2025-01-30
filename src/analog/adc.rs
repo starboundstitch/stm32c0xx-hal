@@ -1,5 +1,4 @@
 //! # Analog to Digital converter
-use core::convert::Infallible;
 use core::ptr;
 
 use crate::gpio::*;
@@ -240,13 +239,13 @@ impl Adc {
     /// If oversampling is enabled, the return value is scaled down accordingly.
     /// The product of the return value and any ADC reading always gives correct voltage in 4096ths of mV
     /// regardless of oversampling and shift settings provided that these settings remain the same.
-    pub fn read_vref(&mut self) -> nb::Result<u16, Infallible> {
+    pub fn read_vref(&mut self) -> u16 {
         let mut vref = VRef::new();
         let vref_val = if vref.enabled(self) {
-            self.read(&mut vref)?
+            self.read(&mut vref)
         } else {
             vref.enable(self);
-            let vref_val = self.read(&mut vref)?;
+            let vref_val = self.read(&mut vref);
             vref.disable(self);
             vref_val
         };
@@ -260,33 +259,25 @@ impl Adc {
         // V_DDA = 3 V x VREFINT_CAL / VREFINT_DATA
         let vref = (vref_cal * 3_000_u32 / vref_val as u32) as u16;
         self.vref_cache = Some(vref);
-        Ok(vref)
+        vref
     }
 
     /// Get VREF value using cached value if possible
     ///
     /// See `read_vref` for more details.
-    pub fn get_vref_cached(&mut self) -> nb::Result<u16, Infallible> {
-        if let Some(vref) = self.vref_cache {
-            Ok(vref)
-        } else {
-            self.read_vref()
-        }
+    pub fn get_vref_cached(&mut self) -> u16 {
+        self.vref_cache.unwrap_or_else(|| self.read_vref())
     }
 
-    pub fn read_voltage<PIN: Channel<Adc, ID = u8>>(
-        &mut self,
-        pin: &mut PIN,
-    ) -> nb::Result<u16, Infallible> {
-        let vref = self.get_vref_cached()?;
+    pub fn read_voltage<PIN: Channel<Adc, ID = u8>>(&mut self, pin: &mut PIN) -> u16 {
+        let vref = self.get_vref_cached();
 
-        self.read(pin).map(|raw| {
-            let adc_mv = (vref as u32 * raw as u32) >> 12;
-            adc_mv as u16
-        })
+        let raw = self.read(pin);
+        let adc_mv = (vref as u32 * raw as u32) >> 12;
+        adc_mv as u16
     }
 
-    fn read<PIN: Channel<Adc, ID = u8>>(&mut self, _pin: &mut PIN) -> nb::Result<u16, Infallible> {
+    fn read<PIN: Channel<Adc, ID = u8>>(&mut self, _pin: &mut PIN) -> u16 {
         self.power_up();
         self.rb.cfgr1().modify(|_, w| unsafe {
             w.res()
@@ -315,16 +306,16 @@ impl Adc {
         };
 
         self.power_down();
-        Ok(val)
+        val
     }
 
-    pub fn read_temperature(&mut self) -> nb::Result<i16, Infallible> {
+    pub fn read_temperature(&mut self) -> i16 {
         let mut vtemp = VTemp::new();
         let vtemp_voltage: u16 = if vtemp.enabled(self) {
-            self.read_voltage(&mut vtemp)?
+            self.read_voltage(&mut vtemp)
         } else {
             vtemp.enable(self);
-            let vtemp_voltage = self.read_voltage(&mut vtemp)?;
+            let vtemp_voltage = self.read_voltage(&mut vtemp);
             vtemp.disable(self);
             vtemp_voltage
         };
@@ -339,7 +330,7 @@ impl Adc {
                                               // 2.5 mV/degC
         let t = 30 + (vtemp_voltage as i32 - v30 as i32) * 10 / 25;
 
-        Ok(t as i16)
+        t as i16
     }
 
     pub fn release(self) -> ADC {
