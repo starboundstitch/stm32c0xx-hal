@@ -34,14 +34,13 @@ mod app {
     fn init(ctx: init::Context) -> (Shared, Local, init::Monotonics) {
         let mut rcc = ctx.device.RCC.constrain();
         let gpioa = ctx.device.GPIOA.split(&mut rcc);
-        let gpioc = ctx.device.GPIOC.split(&mut rcc);
 
         let mut timer = ctx.device.TIM17.timer(&mut rcc);
         timer.start(Hertz::Hz(3).into_duration());
         timer.listen();
 
         let mut exti = ctx.device.EXTI;
-        gpioc.pc13.listen(SignalEdge::Falling, &mut exti);
+        gpioa.pa4.listen(SignalEdge::Falling, &mut exti);
 
         (
             Shared { timer },
@@ -68,7 +67,7 @@ mod app {
                 tim.resume();
             }
         });
-        ctx.local.exti.unpend(Event::GPIO13);
+        ctx.local.exti.unpend(Event::GPIO4);
     }
 
     #[idle]
