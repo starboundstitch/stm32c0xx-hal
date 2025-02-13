@@ -84,7 +84,7 @@ macro_rules! qei {
                 }
 
                 pub fn count(&self) -> u16 {
-                    self.tim.cnt().read().$cnt().bits()
+                    self.tim.cnt().read().$cnt().bits().try_into().unwrap()
                 }
 
                 pub fn direction(&self) -> Direction {

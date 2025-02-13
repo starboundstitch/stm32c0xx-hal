@@ -196,7 +196,7 @@ macro_rules! pwm_advanced_hal {
         $ccmrx_output:ident,
         $ocxpe:ident,
         $ocxm:ident,
-        $ccrx:ident
+        $ccrx:expr
         $(, $moe:ident)*
     ) ,)+
     ) => {
@@ -223,7 +223,7 @@ macro_rules! pwm_advanced_hal {
                 }
 
                 pub fn get_duty(&self) -> u16 {
-                    unsafe { (*$TIMX::ptr()).$ccrx().read().ccr().bits() }
+                    unsafe { (*$TIMX::ptr()).ccr($ccrx).read().ccr().bits() }
                 }
 
                 pub fn get_max_duty(&self) -> u16 {
@@ -231,7 +231,7 @@ macro_rules! pwm_advanced_hal {
                 }
 
                 pub fn set_duty(&mut self, duty: u16) {
-                    unsafe { (*$TIMX::ptr()).$ccrx().write(|w| w.ccr().bits(duty)); }
+                    unsafe { (*$TIMX::ptr()).ccr($ccrx).write(|w| w.ccr().bits(duty)); }
                 }
             }
 
@@ -263,13 +263,13 @@ macro_rules! pwm_advanced_hal {
 }
 
 pwm_advanced_hal! {
-    TIM1:  (Channel1, cc1e: cc1ne, ccmr1_output, oc1pe, oc1m, ccr1, moe),
-    TIM1:  (Channel2, cc2e: cc2ne, ccmr1_output, oc2pe, oc2m, ccr2, moe),
-    TIM1:  (Channel3, cc3e: cc3ne, ccmr2_output, oc3pe, oc3m, ccr3, moe),
-    TIM1:  (Channel4, cc4e, ccmr2_output, oc4pe, oc4m, ccr4, moe),
-    TIM14: (Channel1, cc1e, ccmr1_output, oc1pe, oc1m, ccr1),
-    TIM16: (Channel1, cc1e: cc1ne, ccmr1_output, oc1pe, oc1m, ccr1, moe),
-    TIM17: (Channel1, cc1e: cc1ne, ccmr1_output, oc1pe, oc1m, ccr1, moe),
+    TIM1:  (Channel1, cc1e: cc1ne, ccmr1_output, oc1pe, oc1m, 1, moe),
+    TIM1:  (Channel2, cc2e: cc2ne, ccmr1_output, oc2pe, oc2m, 2, moe),
+    TIM1:  (Channel3, cc3e: cc3ne, ccmr2_output, oc3pe, oc3m, 3, moe),
+    TIM1:  (Channel4, cc4e, ccmr2_output, oc4pe, oc4m, 4, moe),
+    TIM14: (Channel1, cc1e, ccmr1_output, oc1pe, oc1m, 1),
+    TIM16: (Channel1, cc1e: cc1ne, ccmr1_output, oc1pe, oc1m, 1, moe),
+    TIM17: (Channel1, cc1e: cc1ne, ccmr1_output, oc1pe, oc1m, 1, moe),
 }
 
 pwm_hal! {
