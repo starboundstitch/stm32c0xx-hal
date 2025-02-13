@@ -44,6 +44,9 @@ pub mod time;
 pub mod timer;
 pub mod watchdog;
 
+#[cfg(feature = "stm32c071")]
+pub mod usb;
+
 #[cfg(feature = "device-selected")]
 mod sealed {
     pub trait Sealed {}

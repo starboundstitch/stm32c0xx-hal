@@ -21,6 +21,7 @@ cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
 embedded-hal = "1.0.0"
 fugit = "0.3.5"
 nb = "1.0.0"
+stm32-usbd = "0.7.0"
 void = { version = "1.0.2", default-features = false }
 
 [dependencies.stm32c0]
